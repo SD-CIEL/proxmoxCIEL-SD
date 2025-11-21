@@ -22,16 +22,13 @@ NODE=$(hostname)
 SDN_ZONE="studZ"
 SDN_VNET="studV"
 
-# Groupe global pour templates de VM
-#GROUP_TEMPLATES="templates-access"
-
-# Crée le groupe global templates-access si inexistant
-#pveum group list | grep -q "$GROUP_TEMPLATES" || pveum group add "$GROUP_TEMPLATES"
-
+# VM TEMPLATE 
+TEMPLATE_SOURCE=100					# id de la VM template à dupliquer
+	
 
 if [[ ! -f "$USERFILE" ]]; then
   echo "❌ Fichier $USERFILE introuvable."
-  echo "Format attendu : username;password;PORT1;PORT2;PORT3"
+  echo "Format attendu : username;password"
   exit 1
 fi
 
@@ -161,24 +158,22 @@ systemctl restart nftables
 echo "✅ NAT et forwarding IPv4 configurés avec nftables."
 
 
-
-
 # === SDN ===
 echo "🌐 Création zone et VNet SDN..."
 if ! pvesh get /cluster/sdn/zones | grep -q "$SDN_ZONE"; then
-    echo "🌐 Création zone SDN $SDN_ZONE..."
+    echo "🌐 🌐 Création zone SDN $SDN_ZONE..."
     pvesh create /cluster/sdn/zones -zone $SDN_ZONE -type simple
-    echo "✅ Zone SDN créée."
+    echo "🌐 ✅ Zone SDN créée."
 else
-    echo "ℹ️ Zone SDN $SDN_ZONE déjà existante."
+    echo "🌐 ℹ️ Zone SDN $SDN_ZONE déjà existante."
 fi
 
 if ! pvesh get /cluster/sdn/vnets | grep -q "$SDN_VNET"; then
-    echo "🌐 Création VNet SDN $SDN_VNET..."
+    echo "🌐 🌐 Création VNet SDN $SDN_VNET..."
     pvesh create /cluster/sdn/vnets -vnet $SDN_VNET -zone $SDN_ZONE
-    echo "✅ VNet SDN créé."
+    echo "🌐 ✅ VNet SDN créé."
 else
-    echo "ℹ️ VNet SDN $SDN_VNET déjà existant."
+    echo "🌐 ℹ️ VNet SDN $SDN_VNET déjà existant."
 fi
 
 # === Rôles ===
@@ -200,76 +195,50 @@ for role in "${!roles[@]}"; do
   fi
 done
 
-# Crée un rôle TemplateCloner
-# Supprime si existant
-# pveum role delete TemplateCloner 2>/dev/null
-# Crée un rôle qui permet uniquement le clonage et l’accès à la console pour le template
-# pveum role add TemplateCloner --privs "VM.Clone"
-
-
 # === Création utilisateurs, ACL et NAT DNAT ===
 echo "🔄 Création des utilisateurs, pools et ACL..."
-while IFS=';' read -r USER PASS PORT1 PORT2 PORT3; do
+while IFS=';' read -r USER PASS; do
   [[ -z "$USER" || -z "$PASS" ]] && continue
 
   echo "----------------------------------------"
-  echo "👤 Création utilisateur : $USER"
+  echo "🔄 👤 Création utilisateur : $USER"
   pveum user add "${USER}@pve" --password "$PASS" --comment "Utilisateur VM limité" || echo "ℹ️ Utilisateur $USER déjà existant."
 
   POOL_NAME="pool_${USER}"
   pvesh get /pools | grep -q "$POOL_NAME" || pvesh create /pools -poolid "$POOL_NAME" -comment "Ressources de $USER"
 
-
-
-	TEMPLATE_SOURCE=100
-	TEMPLATE_NAME="template-${USER}"
-
+  # Copie d'un template dans les pools utilisateur.
+    TEMPLATE_NAME="template-${USER}"	# nom de VM template duliqué dans le pool de l'utilisateur
 	# Chercher un VM existant portant ce nom
 	EXISTING_TEMPLATE_ID=$(pvesh get /cluster/resources --type vm | grep -w $TEMPLATE_NAME)
 	if [[ -n "$EXISTING_TEMPLATE_ID" ]]; then
-		echo "⚠️  Le template $TEMPLATE_NAME existe déjà → VMID $EXISTING_TEMPLATE_ID"
-		echo "➡️  Ajout au pool si besoin..."
-
-		# Ajout au pool (sans erreur si déjà dedans)
-		#pvesh set /pools/$POOL_NAME -vms $EXISTING_TEMPLATE_ID --allow-move true
-
-		echo "✅ Template déjà présent, rien cloné."
+		echo "🔄 ⚠️  Le template $TEMPLATE_NAME existe déjà → VMID $EXISTING_TEMPLATE_ID"
 	else
-    	# Sinon, créer un nouveau template
 	   NEW_TEMPLATE_ID=$(pvesh get /cluster/nextid)
-	   echo "📦 Création du template privé pour $USER → VMID $NEW_TEMPLATE_ID"
+	   echo "🔄 📦 Création du template privé pour $USER → VMID $NEW_TEMPLATE_ID"
        if ! qm clone $TEMPLATE_SOURCE $NEW_TEMPLATE_ID --name "$TEMPLATE_NAME"; then
-	     	echo "❌ Impossible de cloner le template pour $USER."
+	     	echo "🔄 ❌ Impossible de cloner le template pour $USER."
 	   fi
 	   # Convertir en template
 	   qm template $NEW_TEMPLATE_ID
 	   # Ajouter au pool (+ autoriser déplacement si VMID déjà dans un autre pool)
 	   pvesh set /pools/$POOL_NAME -vms $NEW_TEMPLATE_ID --allow-move true
-	   echo "✅ Template privé assigné à $USER (VMID $NEW_TEMPLATE_ID)"
+	   echo "🔄 ✅ Template privé assigné à $USER (VMID $NEW_TEMPLATE_ID)"
     fi
 	
-	
-
-  echo "🛠️ Attribution des ACL pour ${USER}@pve ..."
+  echo "🔄 🛠️ Attribution des ACL pour ${USER}@pve ..."
   pveum acl modify /pool/$POOL_NAME -user ${USER}@pve -role LimitedVMAdmin
   pveum acl modify /pool/$POOL_NAME -user ${USER}@pve -role PVEAuditor
   pveum acl modify /nodes/$NODE -user ${USER}@pve -role LimitedVMAdmin
   pveum acl modify /storage/local -user ${USER}@pve -role ISOAccess
   pveum acl modify /storage/local-lvm -user ${USER}@pve -role LimitedStorageAccess
   pveum acl modify / -user ${USER}@pve -role SDNStudent
-  echo "✅ ACL configurées pour ${USER}@pve (pool : $POOL_NAME)"
+  echo "🔄 🛠️ ✅ ACL configurées pour ${USER}@pve (pool : $POOL_NAME)"
   
-  # ===== Droits pour voir et cloner tous les templates =====
-  #pveum user modify ${USER}@pve --group "$GROUP_TEMPLATES"
-  # Appliquer TemplateCloner sur chaque template existant
-  #for VMID in $(pvesh get /cluster/resources --type vm | jq -r '.[] | select(.template==1) | .vmid'); do
-  #  pveum acl modify /vms/$VMID --group "$GROUP_TEMPLATES" --role TemplateCloner
-  #done
-
-  echo "✅ Droits templates appliqués pour ${USER}@pve"
-
+  echo "🔄 ✅ Droits templates appliqués pour ${USER}@pve"
 
 done < "$USERFILE"
+
 
 #DNAT 
 echo "🌐 ---------------DNAT------------------"
@@ -280,12 +249,11 @@ for i in $(seq "$VM_NET_START" "$VM_NET_STOP"); do
 		set -- $pat      # transforme "22 22" → $1=22 $2=22
 		port_vm=$1
 		port_px=$(( $2 + i * 100 ))
-		echo "🌐 DNAT EXTERNAL_IF=$EXTERNAL_IF  VM $PROXMOX_IP:$port_px -> $IP_VM:$port_vm"
 		if ! nft list table ip proxmox_nat | grep -q "tcp dport $port_px "; then
 			nft add rule ip proxmox_nat prerouting iifname "$EXTERNAL_IF" tcp dport $port_px dnat to $IP_VM:$port_vm
-		    echo "✅ DNAT ajouté pour port $port_px"
+		    echo "🌐 ✅  DNAT EXTERNAL_IF=$EXTERNAL_IF  VM $PROXMOX_IP:$port_px -> $IP_VM:$port_vm"
 		else
-			echo "ℹ️ DNAT déjà présent pour port $port_px"
+			echo "🌐 ℹ️ DNAT déjà présent pour port $port_px"
 		fi	
 	done
   done
