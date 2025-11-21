@@ -6,7 +6,7 @@
 #            Option : --reset-nft pour purger règles NFT existantes
 # Auteur : SD 2025
 # Usage : ./creation-user-nat-dhcp-sdn.sh users.txt [--reset-nft]
-# Format users.txt : username;password;PORT1;PORT2;PORT3
+# Format users.txt : username;password
 # ======================================================
 
 USERFILE="$1"
@@ -16,7 +16,7 @@ BRIDGE="vmbr1"
 BRIDGE_NET="192.168.100.0/24"
 BRIDGE_GW="192.168.100.1"
 EXTERNAL_IF="vmbr0"
-VM_NET_START=100
+VM_NET_START=10
 VM_NET_STOP=210
 NODE=$(hostname)
 SDN_ZONE="studZ"
@@ -202,9 +202,9 @@ done
 
 # Crée un rôle TemplateCloner
 # Supprime si existant
-pveum role delete TemplateCloner 2>/dev/null
+# pveum role delete TemplateCloner 2>/dev/null
 # Crée un rôle qui permet uniquement le clonage et l’accès à la console pour le template
-pveum role add TemplateCloner --privs "VM.Clone"
+# pveum role add TemplateCloner --privs "VM.Clone"
 
 
 # === Création utilisateurs, ACL et NAT DNAT ===
@@ -221,37 +221,34 @@ while IFS=';' read -r USER PASS PORT1 PORT2 PORT3; do
 
 
 
-TEMPLATE_SOURCE=100
-TEMPLATE_NAME="template-${USER}"
+	TEMPLATE_SOURCE=100
+	TEMPLATE_NAME="template-${USER}"
 
-# Chercher un VM existant portant ce nom
-EXISTING_TEMPLATE_ID=$(pvesh get /cluster/resources --type vm \
-    | grep -w "\"name\":\"$TEMPLATE_NAME\"" \
-    | sed -n 's/.*"vmid":\([0-9]*\).*/\1/p')
+	# Chercher un VM existant portant ce nom
+	EXISTING_TEMPLATE_ID=$(pvesh get /cluster/resources --type vm | grep -w $TEMPLATE_NAME)
+	if [[ -n "$EXISTING_TEMPLATE_ID" ]]; then
+		echo "⚠️  Le template $TEMPLATE_NAME existe déjà → VMID $EXISTING_TEMPLATE_ID"
+		echo "➡️  Ajout au pool si besoin..."
 
-if [[ -n "$EXISTING_TEMPLATE_ID" ]]; then
-    echo "⚠️  Le template $TEMPLATE_NAME existe déjà → VMID $EXISTING_TEMPLATE_ID"
-    echo "➡️  Ajout au pool si besoin..."
+		# Ajout au pool (sans erreur si déjà dedans)
+		#pvesh set /pools/$POOL_NAME -vms $EXISTING_TEMPLATE_ID --allow-move true
 
-    # Ajout au pool (sans erreur si déjà dedans)
-    pvesh set /pools/$POOL_NAME -vms $EXISTING_TEMPLATE_ID --allow-move true
-
-    echo "✅ Template déjà présent, rien cloné."
-    exit 0
-fi
-
-# Sinon, créer un nouveau template
-NEW_TEMPLATE_ID=$(pvesh get /cluster/nextid)
-echo "📦 Création du template privé pour $USER → VMID $NEW_TEMPLATE_ID"
-
-if ! qm clone $TEMPLATE_SOURCE $NEW_TEMPLATE_ID --name "$TEMPLATE_NAME"; then
-    echo "❌ Impossible de cloner le template pour $USER."
-    exit 1
-fi
-
-
-
-
+		echo "✅ Template déjà présent, rien cloné."
+	else
+    	# Sinon, créer un nouveau template
+	   NEW_TEMPLATE_ID=$(pvesh get /cluster/nextid)
+	   echo "📦 Création du template privé pour $USER → VMID $NEW_TEMPLATE_ID"
+       if ! qm clone $TEMPLATE_SOURCE $NEW_TEMPLATE_ID --name "$TEMPLATE_NAME"; then
+	     	echo "❌ Impossible de cloner le template pour $USER."
+	   fi
+	   # Convertir en template
+	   qm template $NEW_TEMPLATE_ID
+	   # Ajouter au pool (+ autoriser déplacement si VMID déjà dans un autre pool)
+	   pvesh set /pools/$POOL_NAME -vms $NEW_TEMPLATE_ID --allow-move true
+	   echo "✅ Template privé assigné à $USER (VMID $NEW_TEMPLATE_ID)"
+    fi
+	
+	
 
   echo "🛠️ Attribution des ACL pour ${USER}@pve ..."
   pveum acl modify /pool/$POOL_NAME -user ${USER}@pve -role LimitedVMAdmin
