@@ -4,6 +4,7 @@
 # Objectif : Créer comptes utilisateurs Proxmox
 #            NAT IPv4 via nftables, DHCP, SDN
 #            Option : --reset-nft pour purger règles NFT existantes
+#            script idempotent (a vérifier)
 # Auteur : SD 2025
 # Usage : ./creation-user-nat-dhcp-sdn.sh users.txt [--reset-nft]
 # Format users.txt : username;password
@@ -25,6 +26,23 @@ SDN_VNET="studV"
 # VM TEMPLATE 
 TEMPLATE_SOURCE=500					# id de la VM template à dupliquer
 	
+# Monitoring
+GROUP="monitoring"
+REALM="pve"
+ROLE="PVEAuditor"
+PATH_ACL="/"
+
+# Ajout du groupe Monitoring si le groupe n'existe pas
+if pveum group list | grep -qw "$GROUP"; then
+    echo "Le groupe '$GROUP' existe déjà."
+else
+    echo "Création du groupe '$GROUP'..."
+    pveum groupadd $GROUP
+fi
+# Attribution du rôle de PVEAuditor au groupe
+echo "Attribution du rôle $ROLE au groupe $GROUP sur $PATH_ACL ..."
+pveum aclmod $PATH_ACL -group $GROUP -role $ROLE
+
 
 if [[ ! -f "$USERFILE" ]]; then
   echo "❌ Fichier $USERFILE introuvable."
@@ -237,6 +255,9 @@ while IFS=';' read -r USER PASS; do
   pveum acl modify / -user ${USER}@pve -role SDNStudent
   echo "🔄 🛠️ ✅ ACL configurées pour ${USER}@pve (pool : $POOL_NAME)"
   
+  echo "🔄 🛠️ Ajout de ${USER}@pve dans le groupe ${GROUP}"
+  pveum usermod "$USER@$REALM" --groups "$GROUP"
+  
   echo "🔄 ✅ Droits templates appliqués pour ${USER}@pve"
 
 done < "$USERFILE"
@@ -265,4 +286,4 @@ for i in $(seq "$VM_NET_START" "$VM_NET_STOP"); do
 
 # systemctl restart nftables
 
-echo "🎉 Création utilisateurs, ACL, NAT IPv4, DHCP et SDN terminée !"
+echo "🎉 Création utilisateurs, ACL, NAT IPv4, DHCP, SDN, copie template terminée !"
