@@ -23,7 +23,7 @@ SDN_ZONE="studZ"
 SDN_VNET="studV"
 
 # VM TEMPLATE 
-TEMPLATE_SOURCE=100					# id de la VM template à dupliquer
+TEMPLATE_SOURCE=500					# id de la VM template à dupliquer
 	
 
 if [[ ! -f "$USERFILE" ]]; then
@@ -208,7 +208,9 @@ while IFS=';' read -r USER PASS; do
   pvesh get /pools | grep -q "$POOL_NAME" || pvesh create /pools -poolid "$POOL_NAME" -comment "Ressources de $USER"
 
   # Copie d'un template dans les pools utilisateur.
-    TEMPLATE_NAME="template-${USER}"	# nom de VM template duliqué dans le pool de l'utilisateur
+    # récupération du nom de la VM
+    VM_NAME=$(qm config "$TEMPLATE_SOURCE" | awk -F': ' '/^name:/ {print $2}')
+    TEMPLATE_NAME="tp-${VM_NAME}-${USER}"	# nom de VM template dupliqué dans le pool de l'utilisateur
 	# Chercher un VM existant portant ce nom
 	EXISTING_TEMPLATE_ID=$(pvesh get /cluster/resources --type vm | grep -w $TEMPLATE_NAME)
 	if [[ -n "$EXISTING_TEMPLATE_ID" ]]; then
