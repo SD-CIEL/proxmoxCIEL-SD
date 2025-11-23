@@ -198,7 +198,7 @@ fi
 echo "🔄 Création / mise à jour des rôles..."
 declare -A roles
 roles=(  # VM.Monitor existe plus dans version 9 de proxmox
-  ["LimitedVMAdmin"]="VM.Allocate VM.Audit VM.Clone VM.Console VM.Config.CDROM VM.Config.Cloudinit VM.Config.Network VM.Config.Options VM.Config.HWType VM.Config.CPU VM.Config.Memory VM.Migrate VM.PowerMgmt Datastore.Audit Datastore.Allocate Pool.Audit Pool.Allocate"
+  ["LimitedVMAdmin"]="VM.Allocate VM.Audit VM.Clone VM.Console VM.Config.CDROM VM.Config.Cloudinit VM.Config.Network VM.Config.Options VM.Config.HWType VM.Config.CPU VM.Config.Memory VM.Migrate VM.PowerMgmt Datastore.Audit Datastore.Allocate Pool.Audit Pool.Allocate VM.Config.Disk"
   ["ISOAccess"]="Datastore.Audit Datastore.AllocateTemplate"
   ["LimitedStorageAccess"]="Datastore.Allocate Datastore.AllocateSpace Datastore.Audit"
   ["SDNStudent"]="SDN.Use SDN.Audit"
